@@ -858,7 +858,7 @@
     }
     // 从左到右日期递增：最左为 6 天前，最右为今天（idx0=最早，idx6=今日）
 
-    var W = 720, H = 250, padL = 46, padR = 40, padT = 24, padB = 38;
+    var W = 720, H = 272, padL = 48, padR = 50, padT = 34, padB = 46;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var n = days.length;
     var xFor = function (idx) { return padL + (n === 1 ? plotW / 2 : plotW * idx / (n - 1)); };
@@ -867,58 +867,61 @@
     var yCount = function (v) { return padT + plotH * (1 - v / maxCount); };
     var yAcc = function (v) { return padT + plotH * (1 - v / 100); };
     var slot = plotW / (n - 1);
-    var barW = Math.min(46, slot * 0.45);
-
-    // 准确率曲线（绿）：仅取有数据的点
-    var accPts = days.map(function (dy, idx) { return dy.acc != null ? xFor(idx) + "," + yAcc(dy.acc) : null; }).filter(Boolean);
+    var barW = Math.min(48, slot * 0.46);
 
     var svg = "<svg class='wk-svg' viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='xMidYMid meet'>";
-    // 横向网格 + 左轴(完成数量) & 右轴(准确率)
+    // 横向网格 + 双轴刻度（颜色加深，避免发灰不显眼）
     [0, 0.25, 0.5, 0.75, 1].forEach(function (p) {
       var y = padT + plotH * (1 - p);
       svg += "<line x1='" + padL + "' y1='" + y + "' x2='" + (W - padR) + "' y2='" + y + "' stroke='#eef2f7' stroke-width='1'/>";
-      svg += "<text x='" + (padL - 6) + "' y='" + (y + 4) + "' text-anchor='end' font-size='11' fill='#94a3b8'>" + Math.round(maxCount * p) + "</text>";
-      svg += "<text x='" + (W - padR + 6) + "' y='" + (y + 4) + "' text-anchor='start' font-size='11' fill='#94a3b8'>" + Math.round(100 * p) + "%</text>";
+      svg += "<text x='" + (padL - 8) + "' y='" + (y + 4) + "' text-anchor='end' font-size='11.5' font-weight='600' fill='#64748b'>" + Math.round(maxCount * p) + "</text>";
+      svg += "<text x='" + (W - padR + 8) + "' y='" + (y + 4) + "' text-anchor='start' font-size='11.5' font-weight='600' fill='#64748b'>" + Math.round(100 * p) + "%</text>";
     });
-    // 目标线（完成数量 = DAILY_GOAL）
-    var gy = yCount(DAILY_GOAL);
-    svg += "<line x1='" + padL + "' y1='" + gy + "' x2='" + (W - padR) + "' y2='" + gy + "' stroke='#f59e0b' stroke-width='1.5' stroke-dasharray='5 4'/>";
-    svg += "<text x='" + (W - padR) + "' y='" + (gy - 5) + "' text-anchor='end' font-size='11' fill='#d97706'>目标 " + DAILY_GOAL + "</text>";
-    // 准确率曲线（绿）—— 仅在有数据（≥2 点）时连线
+    // 柱状（每日答题量）—— 先画，标签加白描边防遮挡
+    days.forEach(function (dy, idx) {
+      if (dy.count > 0) {
+        var x = xFor(idx) - barW / 2, y = yCount(dy.count), h = padT + plotH - y;
+        svg += "<rect x='" + x + "' y='" + y + "' width='" + barW + "' height='" + h + "' rx='4' fill='#2563eb'/>";
+        svg += "<text x='" + (x + barW / 2) + "' y='" + (y - 8) + "' text-anchor='middle' font-size='12' font-weight='800' fill='#1d4ed8' paint-order='stroke' stroke='#fff' stroke-width='3'>" + dy.count + "</text>";
+      }
+    });
+    // 准确率曲线 + 数据点（绿，描边白底防遮挡）
+    var accPts = days.map(function (dy, idx) { return dy.acc != null ? xFor(idx) + "," + yAcc(dy.acc) : null; }).filter(Boolean);
     if (accPts.length > 1) svg += "<polyline points='" + accPts.join(" ") + "' fill='none' stroke='#16a34a' stroke-width='2.5' stroke-linejoin='round'/>";
     else if (accPts.length === 1) { var a = accPts[0].split(","); svg += "<circle cx='" + a[0] + "' cy='" + a[1] + "' r='3.5' fill='#16a34a'/>"; }
-    // 数据点 + 数值标注：每日答题量用蓝色柱状图，准确率用绿色曲线点
     days.forEach(function (dy, idx) {
-      var cx = xFor(idx);
-      if (dy.count > 0) {
-        var yTop = yCount(dy.count);
-        var bh = padT + plotH - yTop;
-        svg += "<rect x='" + (cx - barW / 2) + "' y='" + yTop + "' width='" + barW + "' height='" + bh + "' rx='4' fill='#2563eb'/>";
-        svg += "<text x='" + cx + "' y='" + (yTop - 9) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#1d4ed8'>" + dy.count + "</text>";
-      }
       if (dy.acc != null) {
-        svg += "<circle cx='" + cx + "' cy='" + yAcc(dy.acc) + "' r='3.5' fill='#16a34a'/>";
-        svg += "<text x='" + cx + "' y='" + (yAcc(dy.acc) + 16) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#15803d'>" + dy.acc + "%</text>";
+        svg += "<circle cx='" + xFor(idx) + "' cy='" + yAcc(dy.acc) + "' r='4' fill='#16a34a' stroke='#fff' stroke-width='1.5'/>";
+        svg += "<text x='" + xFor(idx) + "' y='" + (yAcc(dy.acc) - 11) + "' text-anchor='middle' font-size='11.5' font-weight='800' fill='#15803d' paint-order='stroke' stroke='#fff' stroke-width='3'>" + dy.acc + "%</text>";
       }
+    });
+    // 目标虚线（最上层，加白底标签，确保不被柱遮挡）
+    var gy = yCount(DAILY_GOAL);
+    svg += "<line x1='" + padL + "' y1='" + gy + "' x2='" + (W - padR) + "' y2='" + gy + "' stroke='#f59e0b' stroke-width='1.8' stroke-dasharray='6 4'/>";
+    svg += "<rect x='" + (W - padR - 66) + "' y='" + (gy - 11) + "' width='64' height='16' rx='8' fill='#fff7ed' stroke='#fdba74'/>";
+    svg += "<text x='" + (W - padR - 34) + "' y='" + (gy + 1) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#c2410c'>目标 " + DAILY_GOAL + "</text>";
+    // 日期标签（置底）
+    days.forEach(function (dy, idx) {
       var lblCls = dy.isToday ? "wk-xl today" : "wk-xl";
-      svg += "<text class='" + lblCls + "' x='" + cx + "' y='" + (H - padB + 20) + "' text-anchor='middle' font-size='12'>" + dy.label + "</text>";
+      svg += "<text class='" + lblCls + "' x='" + xFor(idx) + "' y='" + (H - padB + 22) + "' text-anchor='middle' font-size='12.5'>" + dy.label + "</text>";
     });
     svg += "</svg>";
 
-    var html = "<h4 style='margin:24px 0 10px'>近 7 日练习</h4>";
-    html += "<div class='week-legend' style='margin-bottom:6px'><span class='lg-line c-blue'></span>完成数量（左轴）　<span class='lg-line c-green'></span>准确率（右轴）</div>";
+    var html = "<h4 style='margin:0 0 10px'>近 7 日练习</h4>";
+    html += "<div class='week-legend' style='margin-bottom:6px'><span class='lg-line c-blue'></span>每日答题量（柱·左轴）　<span class='lg-line c-green'></span>准确率（曲线·右轴）</div>";
     html += svg;
     return html;
   }
 
-  function ringSvg(pct, size, stroke) {
+  function ringSvg(pct, cls) {
     pct = Math.max(0, Math.min(100, pct));
+    var size = 72, stroke = 8;
     var r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c * (1 - pct / 100);
     var color = pct >= 100 ? "#16a34a" : "#1d4ed8";
-    return "<svg width='" + size + "' height='" + size + "' viewBox='0 0 " + size + " " + size + "'>" +
-      "<circle cx='" + (size / 2) + "' cy='" + (size / 2) + "' r='" + r + "' fill='none' stroke='#eef2f7' stroke-width='" + stroke + "'/>" +
-      "<circle cx='" + (size / 2) + "' cy='" + (size / 2) + "' r='" + r + "' fill='none' stroke='" + color + "' stroke-width='" + stroke + "' stroke-linecap='round' stroke-dasharray='" + c + "' stroke-dashoffset='" + off + "' transform='rotate(-90 " + (size / 2) + " " + (size / 2) + ")'/>" +
-      "<text x='50%' y='50%' text-anchor='middle' dominant-baseline='central' font-size='" + Math.round(size * 0.26) + "' font-weight='700' fill='#1f2937'>" + pct + "%</text>" +
+    return "<svg class='" + (cls || "") + "' viewBox='0 0 " + size + " " + size + "'>" +
+      "<circle cx='36' cy='36' r='" + r + "' fill='none' stroke='#dbe3f5' stroke-width='" + stroke + "'/>" +
+      "<circle cx='36' cy='36' r='" + r + "' fill='none' stroke='" + color + "' stroke-width='" + stroke + "' stroke-linecap='round' stroke-dasharray='" + c + "' stroke-dashoffset='" + off + "' transform='rotate(-90 36 36)'/>" +
+      "<text x='50%' y='50%' text-anchor='middle' dominant-baseline='central' font-size='19' font-weight='800' fill='#1f2937'>" + pct + "%</text>" +
       "</svg>";
   }
 
@@ -997,20 +1000,27 @@
     var pct = Math.min(100, Math.round((t.count / DAILY_GOAL) * 100));
     var ov = overviewStats();
 
-    // 顶部合并区：练习概览（累计作答 / 总正确率）+ 今日目标
+    // 顶部合并区：练习概览（累计作答 / 总正确率 + 今日目标），三者同一行、垂直居中、不上下堆叠
+    var cheerCls = "", cheerTxt;
+    if (t.count >= DAILY_GOAL) {
+      cheerCls = " celebrate";
+      cheerTxt = "🎉 今日目标已达成，继续保持！";
+    } else {
+      cheerTxt = "还差 " + (DAILY_GOAL - t.count) + " 题完成目标，继续加油 💪";
+    }
+
     var combo = document.createElement("div");
     combo.className = "card combo-card";
     combo.innerHTML =
       "<div class='combo'>" +
-        "<div class='ov-left'>" +
-          "<div class='stat'><div class='num'>" + ov.answered + "</div><div class='lbl'>累计作答</div></div>" +
-          "<div class='stat'><div class='num'>" + ov.rate + "%</div><div class='lbl'>总正确率</div></div>" +
-        "</div>" +
+        "<div class='stat'><div class='num'>" + ov.answered + "</div><div class='lbl'>累计作答</div></div>" +
+        "<div class='stat'><div class='num'>" + ov.rate + "%</div><div class='lbl'>总正确率</div></div>" +
         "<div class='ov-right'>" +
-          ringSvg(pct, 64, 7) +
+          ringSvg(pct, "ov-ring") +
           "<div class='meta'>" +
             "<div class='tag'>今日目标</div>" +
             "<div class='ov-goal-num'>" + t.count + " / " + DAILY_GOAL + " 题</div>" +
+            "<div class='cheer-inline" + cheerCls + "'>" + cheerTxt + "</div>" +
           "</div>" +
         "</div>" +
       "</div>";
