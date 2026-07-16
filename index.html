@@ -31,8 +31,23 @@
     <div class="modal-box" id="modalBox"></div>
   </div>
 
+  <!-- 方案② 添加设备配对弹窗 -->
+  <div id="pairModal" class="pair-modal">
+    <div class="pair-box">
+      <span class="pair-close" id="pairClose">×</span>
+      <h4>添加设备</h4>
+      <p>用另一台设备扫码，或打开下方链接，即可加入同一份同步数据（一次性，无需注册）。</p>
+      <div class="qr" id="pairQr"></div>
+      <code class="pair-link" id="pairLink"></code>
+      <div class="pair-actions">
+        <button class="btn primary" id="pairCopy">复制链接</button>
+        <button class="btn" id="pairDone">完成</button>
+      </div>
+    </div>
+  </div>
+
   <footer class="foot">
-    <span>数据保存在本机浏览器（localStorage），不会上传。</span>
+    <span>数据保存在本机浏览器，并自动跨设备云端同步。</span>
     <span class="dot">·</span>
     <span>更新题库：把新 Excel 交给我重跑 <code>convert.py</code> 即可。</span>
   </footer>

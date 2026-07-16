@@ -157,6 +157,61 @@
     for (var i = 0; i < els.length; i++) els[i].textContent = syncLabel();
   }
 
+  /* ---------------- 方案②：设备配对（免同步码、免注册） ---------------- */
+  function openPair() {
+    var modal = document.getElementById("pairModal");
+    var linkEl = document.getElementById("pairLink");
+    var qrEl = document.getElementById("pairQr");
+    if (!modal || !linkEl || !qrEl) { toast("配对组件未加载"); return; }
+    fetch("/api/pair/start", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ bucket: getUid() })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.token) { toast("生成配对链接失败"); return; }
+      var url = location.origin + "/?pair=" + encodeURIComponent(j.token);
+      linkEl.textContent = url;
+      qrEl.innerHTML = "";
+      var img = document.createElement("img");
+      img.alt = "配对二维码";
+      img.src = "https://api.qrserver.com/v1/create-qr-code/?size=168x168&data=" + encodeURIComponent(url);
+      qrEl.appendChild(img);
+      modal.classList.add("show");
+    }).catch(function () { toast("生成配对链接失败，请检查网络"); });
+  }
+  function closePair() {
+    var m = document.getElementById("pairModal");
+    if (m) m.classList.remove("show");
+  }
+  function copyPair() {
+    var t = document.getElementById("pairLink");
+    if (!t || !t.textContent) return;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t.textContent).then(function () { toast("链接已复制"); },
+        function () { toast("复制失败，请手动复制"); });
+    } else { toast("请手动复制：" + t.textContent); }
+  }
+  // 通过 ?pair= 链接进入：加入同一份同步数据
+  (function parsePair() {
+    try {
+      var p = new URLSearchParams(location.search);
+      var token = p.get("pair");
+      if (!token) return;
+      fetch("/api/pair/accept?pair=" + encodeURIComponent(token), { method: "GET" })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (j && j.bucket) {
+            settings.syncUid = j.bucket; settings.lastSyncTs = 0; saveSettings();
+            try { history.replaceState({}, "", location.pathname); } catch (e) {}
+            toast("已加入同步，正在同步数据…");
+            syncNow();
+          } else {
+            toast("配对失败：链接无效或已过期");
+          }
+        })
+        .catch(function () { toast("配对失败，请检查网络"); });
+    } catch (e) {}
+  })();
+
   var toastTimer;
   function toast(msg) {
     var t = document.getElementById("savedTip");
@@ -782,134 +837,7 @@
     doFilter();
   }
 
-  /* ---------------- 模式：我的进度 ---------------- */
-  function renderProgress() {
-    updateModeInfo("答题练习进度概览");
-    var total = BANK.length;
-    var practicedIds = Object.keys(stats).filter(function (id) { var s = stats[id]; return s && (s.correct + s.wrong) > 0; });
-    var correctSum = 0, wrongSum = 0;
-    practicedIds.forEach(function (id) { correctSum += stats[id].correct; wrongSum += stats[id].wrong; });
-    var answered = correctSum + wrongSum;
-    var rate = answered ? Math.round((correctSum / answered) * 100) : 0;
-    var wrongCount = Object.keys(wrong).length;
-    var t = todayStat();
-
-    app.innerHTML = "";
-    var card = document.createElement("div");
-    card.className = "card";
-    var html = "<h3 style='margin-top:0'>练习概览</h3><div class='stat-grid'>";
-    html += statBox(total, "题库总数");
-    html += statBox(practicedIds.length, "已练习");
-    html += statBox(answered, "累计作答");
-    html += statBox(rate + "%", "总正确率");
-    html += statBox(wrongCount, "当前错题");
-    html += "</div>";
-
-    // 今日目标
-    var pct = Math.min(100, Math.round((t.count / DAILY_GOAL) * 100));
-    html += "<h4 style='margin:22px 0 10px'>今日目标（" + DAILY_GOAL + " 题）</h4>";
-    html += "<div class='today-row'>";
-    html += ringSvg(pct, 84, 9);
-    html += "<div class='today-info'>";
-    html += "<div class='today-num'>" + t.count + " / " + DAILY_GOAL + " 题</div>";
-    if (t.count >= DAILY_GOAL) html += "<div class='today-state ok'>🎉 今日目标已达成！</div>";
-    else html += "<div class='today-state'>还差 <b>" + (DAILY_GOAL - t.count) + "</b> 题完成今日目标</div>";
-    html += "<div class='today-sub'>今日正确率 " + (t.count ? Math.round((t.correct / t.count) * 100) : 0) + "% ｜ 连续打卡 " + streakDays() + " 天</div>";
-    html += "</div></div>";
-
-    // 近 7 日练习
-    html += last7Chart();
-
-    // 各题型进度
-    html += "<h4 style='margin:24px 0 10px'>各题型进度</h4><div class='progress-list'>";
-    ["single", "multiple", "judge", "short"].forEach(function (tp) {
-      var all = BANK.filter(function (q) { return q.type === tp; });
-      var done = all.filter(function (q) { var s = stats[q.id]; return s && (s.correct + s.wrong) > 0; });
-      var p = all.length ? Math.round((done.length / all.length) * 100) : 0;
-      html += "<div class='pl-row'><div class='pl-name'>" + typeLabel(tp) + "</div>" +
-        "<div class='pl-bar bar'><span style='width:" + p + "%'></span></div>" +
-        "<div style='width:90px;text-align:right;color:#6b7280;font-size:13px'>" + done.length + "/" + all.length + "</div></div>";
-    });
-    html += "</div>";
-    card.innerHTML = html;
-    app.appendChild(card);
-
-    // 云端同步卡片
-    var scard = document.createElement("div");
-    scard.className = "card sync-card";
-    scard.innerHTML = syncCardHtml();
-    app.appendChild(scard);
-    bindSyncCard(scard);
-  }
-
-  function syncCardHtml() {
-    var uid = getUid();
-    var html = "<h3 style='margin-top:0'>☁ 云端同步（跨设备）</h3>";
-    html += "<div class='sync-status js-sync-status'>" + syncLabel() + "</div>";
-    html += "<div class='sync-row'><span class='sync-k'>同步码</span><code class='sync-code' id='syncCode'>" + uid + "</code>" +
-            "<button class='btn sm' id='copyUid'>复制</button></div>";
-    html += "<div class='sync-tip'>把同一同步码填到其它设备，练习记录即自动同步。同步码即密钥，请勿泄露。</div>";
-    html += "<div class='sync-actions'>" +
-            "<button class='btn' id='syncNow'>立即同步</button>" +
-            "<button class='btn ghost' id='exportBtn'>导出备份</button>" +
-            "<button class='btn ghost' id='importBtn'>导入备份</button></div>";
-    html += "<div class='sync-row' style='margin-top:10px'><input id='uidInput' class='sync-input' placeholder='输入 / 更换同步码' /><button class='btn sm' id='setUid'>设置</button></div>";
-    html += "<input type='file' id='importFile' accept='application/json' style='display:none' />";
-    return html;
-  }
-  function bindSyncCard(root) {
-    var codeEl = root.querySelector("#syncCode");
-    var copyBtn = root.querySelector("#copyUid");
-    if (copyBtn) copyBtn.onclick = function () {
-      var u = getUid();
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(u).then(function () { toast("同步码已复制"); },
-          function () { toast("复制失败，请手动选择文本"); });
-      } else { toast("请手动复制：" + u); }
-    };
-    var nowBtn = root.querySelector("#syncNow");
-    if (nowBtn) nowBtn.onclick = function () { syncNow(); toast("正在同步…"); };
-    var setBtn = root.querySelector("#setUid");
-    if (setBtn) setBtn.onclick = function () {
-      var v = (root.querySelector("#uidInput").value || "").trim();
-      if (!/^[A-Za-z0-9_-]{8,64}$/.test(v)) { toast("同步码需 8–64 位字母/数字"); return; }
-      settings.syncUid = v; settings.lastSyncTs = 0; saveSettings();
-      if (codeEl) codeEl.textContent = v;
-      toast("同步码已设置，正在同步…");
-      syncNow();
-    };
-    var expBtn = root.querySelector("#exportBtn");
-    if (expBtn) expBtn.onclick = function () {
-      var data = { uid: getUid(), exportedAt: Date.now(), payload: snapshot() };
-      var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-      var a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "epc-backup-" + fmtKey(new Date()) + ".json";
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-      toast("已导出备份");
-    };
-    var impBtn = root.querySelector("#importBtn");
-    var fileEl = root.querySelector("#importFile");
-    if (impBtn && fileEl) impBtn.onclick = function () { fileEl.click(); };
-    if (fileEl) fileEl.onchange = function () {
-      var f = fileEl.files && fileEl.files[0]; if (!f) return;
-      var rd = new FileReader();
-      rd.onload = function () {
-        try {
-          var d = JSON.parse(rd.result);
-          if (d && d.payload) {
-            applySnapshot(d.payload);
-            settings.lastSyncTs = d.exportedAt || Date.now();
-            saveSettings();
-            rerenderCurrent();
-            toast("已从备份导入");
-          } else { toast("导入失败：缺少数据"); }
-        } catch (e) { toast("导入失败：文件格式错误"); }
-      };
-      rd.readAsText(f);
-    };
-  }
+  /* ---------------- 近 7 日练习图（首页底部使用） ---------------- */
 
   function last7Chart() {
     var d = new Date();
@@ -938,9 +866,10 @@
     days.forEach(function (dy) { if (dy.count > maxCount) maxCount = dy.count; });
     var yCount = function (v) { return padT + plotH * (1 - v / maxCount); };
     var yAcc = function (v) { return padT + plotH * (1 - v / 100); };
+    var slot = plotW / (n - 1);
+    var barW = Math.min(46, slot * 0.45);
 
-    // 仅取「有数据」的点（count>0 / acc 非空），空日置 null —— 曲线只在有数据的点之间连成
-    var countPts = days.map(function (dy, idx) { return dy.count > 0 ? xFor(idx) + "," + yCount(dy.count) : null; }).filter(Boolean);
+    // 准确率曲线（绿）：仅取有数据的点
     var accPts = days.map(function (dy, idx) { return dy.acc != null ? xFor(idx) + "," + yAcc(dy.acc) : null; }).filter(Boolean);
 
     var svg = "<svg class='wk-svg' viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='xMidYMid meet'>";
@@ -958,15 +887,14 @@
     // 准确率曲线（绿）—— 仅在有数据（≥2 点）时连线
     if (accPts.length > 1) svg += "<polyline points='" + accPts.join(" ") + "' fill='none' stroke='#16a34a' stroke-width='2.5' stroke-linejoin='round'/>";
     else if (accPts.length === 1) { var a = accPts[0].split(","); svg += "<circle cx='" + a[0] + "' cy='" + a[1] + "' r='3.5' fill='#16a34a'/>"; }
-    // 完成数量曲线（蓝）—— 仅在有数据（≥2 点）时连线
-    if (countPts.length > 1) svg += "<polyline points='" + countPts.join(" ") + "' fill='none' stroke='#2563eb' stroke-width='2.5' stroke-linejoin='round'/>";
-    else if (countPts.length === 1) { var c = countPts[0].split(","); svg += "<circle cx='" + c[0] + "' cy='" + c[1] + "' r='3.5' fill='#2563eb'/>"; }
-    // 数据点 + 数值标注：空日（未练习）不显示答题数与准确率，仅保留日期标签
+    // 数据点 + 数值标注：每日答题量用蓝色柱状图，准确率用绿色曲线点
     days.forEach(function (dy, idx) {
       var cx = xFor(idx);
       if (dy.count > 0) {
-        svg += "<circle cx='" + cx + "' cy='" + yCount(dy.count) + "' r='3.5' fill='#2563eb'/>";
-        svg += "<text x='" + cx + "' y='" + (yCount(dy.count) - 9) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#1d4ed8'>" + dy.count + "</text>";
+        var yTop = yCount(dy.count);
+        var bh = padT + plotH - yTop;
+        svg += "<rect x='" + (cx - barW / 2) + "' y='" + yTop + "' width='" + barW + "' height='" + bh + "' rx='4' fill='#2563eb'/>";
+        svg += "<text x='" + cx + "' y='" + (yTop - 9) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#1d4ed8'>" + dy.count + "</text>";
       }
       if (dy.acc != null) {
         svg += "<circle cx='" + cx + "' cy='" + yAcc(dy.acc) + "' r='3.5' fill='#16a34a'/>";
@@ -977,7 +905,7 @@
     });
     svg += "</svg>";
 
-    var html = "<h4 style='margin:24px 0 10px'>近 7 日练习（最近 7 天，右端为今日）</h4>";
+    var html = "<h4 style='margin:24px 0 10px'>近 7 日练习</h4>";
     html += "<div class='week-legend' style='margin-bottom:6px'><span class='lg-line c-blue'></span>完成数量（左轴）　<span class='lg-line c-green'></span>准确率（右轴）</div>";
     html += svg;
     return html;
@@ -1050,34 +978,45 @@
     { key: "wrongPractice", title: "错题练习", desc: "只在错题本里抽题，可手动移除", cls: "c-amber", icon: ICONS.wrongPractice, fn: function () { setMode("wrongPractice"); } },
     { key: "wrongList", title: "错题汇总", desc: "查看所有错题与答错次数", cls: "c-red", icon: ICONS.wrongList, fn: function () { setMode("wrongList"); } },
     { key: "search", title: "题目搜索", desc: "按关键字检索题目与答案", cls: "c-teal", icon: ICONS.search, fn: function () { setMode("search"); } },
-    { key: "category", title: "模块练习", desc: "按科目类别分模块刷题", cls: "c-green", icon: ICONS.grid, fn: function () { setMode("category"); } },
-    { key: "progress", title: "我的进度", desc: "练习概览 · 每日目标 · 近 7 日", cls: "c-indigo", icon: ICONS.progress, fn: function () { setMode("progress"); } }
+    { key: "category", title: "模块练习", desc: "按科目类别分模块刷题", cls: "c-green", icon: ICONS.grid, fn: function () { setMode("category"); } }
   ];
+
+  function overviewStats() {
+    var correctSum = 0, wrongSum = 0;
+    Object.keys(stats).forEach(function (id) {
+      var s = stats[id]; if (s) { correctSum += s.correct || 0; wrongSum += s.wrong || 0; }
+    });
+    var answered = correctSum + wrongSum;
+    var rate = answered ? Math.round((correctSum / answered) * 100) : 0;
+    return { answered: answered, rate: rate };
+  }
 
   function renderHome() {
     app.innerHTML = "";
     var t = todayStat();
     var pct = Math.min(100, Math.round((t.count / DAILY_GOAL) * 100));
+    var ov = overviewStats();
 
-    // 今日目标横幅
-    var banner = document.createElement("div");
-    banner.className = "daily-goal";
-    var done = t.count >= DAILY_GOAL;
-    banner.innerHTML =
-      "<div class='dg-icon'>" + ICONS.goal + "</div>" +
-      "<div class='dg-main'>" +
-        "<div class='dg-title'>今日练习目标 · " + DAILY_GOAL + " 题</div>" +
-        "<div class='dg-bar'><span style='width:" + pct + "%' class='" + (done ? "done" : "") + "'></span></div>" +
-        "<div class='dg-sub'>" +
-          (done ? "🎉 今日目标已达成，继续保持！" : "已完成 <b>" + t.count + "</b> / " + DAILY_GOAL + " 题，还差 <b>" + (DAILY_GOAL - t.count) + "</b> 题") +
-          " ｜ 连续打卡 <b>" + streakDays() + "</b> 天" +
-          " ｜ <span class='js-sync-status'>" + syncLabel() + "</span>" +
+    // 顶部合并区：练习概览（累计作答 / 总正确率）+ 今日目标
+    var combo = document.createElement("div");
+    combo.className = "card combo-card";
+    combo.innerHTML =
+      "<div class='combo'>" +
+        "<div class='ov-left'>" +
+          "<div class='stat'><div class='num'>" + ov.answered + "</div><div class='lbl'>累计作答</div></div>" +
+          "<div class='stat'><div class='num'>" + ov.rate + "%</div><div class='lbl'>总正确率</div></div>" +
         "</div>" +
-      "</div>" +
-      "<div class='dg-ring'>" + ringSvg(pct, 76, 8) + "</div>";
-    app.appendChild(banner);
+        "<div class='ov-right'>" +
+          ringSvg(pct, 64, 7) +
+          "<div class='meta'>" +
+            "<div class='tag'>今日目标</div>" +
+            "<div class='ov-goal-num'>" + t.count + " / " + DAILY_GOAL + " 题</div>" +
+          "</div>" +
+        "</div>" +
+      "</div>";
+    app.appendChild(combo);
 
-    // 图标网格
+    // 图标网格（不含「我的进度」）
     var grid = document.createElement("div");
     grid.className = "home-grid";
     FEATURES.forEach(function (f) {
@@ -1092,6 +1031,22 @@
       grid.appendChild(card);
     });
     app.appendChild(grid);
+
+    // 近 7 日练习（首页底部）
+    var wkCard = document.createElement("div");
+    wkCard.className = "card";
+    wkCard.innerHTML = last7Chart();
+    app.appendChild(wkCard);
+
+    // 底部静默同步提示 + 添加设备入口（方案②：无需同步码）
+    var foot = document.createElement("div");
+    foot.className = "home-foot";
+    foot.innerHTML =
+      "<div class='sync-hint'>☁ 云端同步进行中（后台自动）<span class='js-sync-status'>" + syncLabel() + "</span></div>" +
+      "<div>数据自动跨设备同步。　<span class='add-device' id='addDevice'>添加设备（同步到其他设备）</span></div>";
+    app.appendChild(foot);
+    var ad = document.getElementById("addDevice");
+    if (ad) ad.onclick = openPair;
   }
 
   /* ---------------- 通用 ---------------- */
@@ -1104,7 +1059,7 @@
 
   var MODE_TITLE = {
     overall: "整体测试", random: "随机测试", wrongList: "错题汇总",
-    wrongPractice: "错题练习", search: "题目搜索", category: "模块练习", progress: "我的进度"
+    wrongPractice: "错题练习", search: "题目搜索", category: "模块练习"
   };
   var currentMode = null;
   var inCategoryPractice = false;
@@ -1128,7 +1083,6 @@
     else if (mode === "wrongPractice") renderWrongPractice();
     else if (mode === "search") renderSearch();
     else if (mode === "category") renderCategoryList();
-    else if (mode === "progress") renderProgress();
   }
 
   document.getElementById("backBtn").onclick = onBack;
@@ -1139,13 +1093,15 @@
     document.getElementById("bankMeta").textContent = s;
   })();
 
-  // 若通过链接带 ?uid= 进入，自动采用该同步码
-  (function parseUid() {
-    try {
-      var p = new URLSearchParams(location.search);
-      var u = p.get("uid");
-      if (u && /^[A-Za-z0-9_-]{8,64}$/.test(u)) { settings.syncUid = u; saveSettings(); }
-    } catch (e) {}
+  // 绑定「添加设备」配对弹窗按钮
+  (function bindPairModal() {
+    var pc = document.getElementById("pairClose"); if (pc) pc.onclick = closePair;
+    var pcp = document.getElementById("pairCopy"); if (pcp) pcp.onclick = copyPair;
+    var pd = document.getElementById("pairDone"); if (pd) pd.onclick = closePair;
+    var pm = document.getElementById("pairModal");
+    if (pm && pm.querySelector(".pair-box")) {
+      pm.querySelector(".pair-box").onclick = function (e) { if (e.target === pm) closePair(); };
+    }
   })();
 
   // 启动：先尝试从云端拉取（若已连接同步服务），再渲染首页

@@ -11,6 +11,7 @@
 
 const ROOT = Deno.cwd();
 const MAX_BODY = 8 * 1024 * 1024; // 8MB 上限，防滥用
+const PAIR_TTL = 10 * 60 * 1000;  // 配对令牌有效期：10 分钟
 
 // 仅允许同步这些键，避免任意数据写入
 const ALLOWED_KEYS = [
@@ -126,6 +127,31 @@ async function handler(req: Request): Promise<Response> {
     }
 
     return new Response("method not allowed", { status: 405 });
+  }
+
+  // ---- 方案②：设备配对（无需注册，用一次性令牌把第二台设备拉进同一份数据桶）----
+  if (pathname === "/api/pair/start") {
+    if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+    let body: { bucket?: unknown } = {};
+    try { body = await req.json(); } catch { body = {}; }
+    const bucket = typeof body.bucket === "string" ? body.bucket : null;
+    if (!isValidUid(bucket)) return json({ error: "invalid bucket" }, 400);
+    const token = crypto.randomUUID().replace(/-/g, "");
+    await kv.set(["pair", token], { bucket, exp: Date.now() + PAIR_TTL });
+    return json({ token });
+  }
+
+  if (pathname === "/api/pair/accept") {
+    const token = url.searchParams.get("pair");
+    if (!token) return json({ error: "missing token" }, 400);
+    const rec = await kv.get<{ bucket: string; exp: number }>(["pair", token]);
+    if (!rec.value) return json({ error: "invalid or expired" }, 404);
+    if (rec.value.exp < Date.now()) {
+      await kv.delete(["pair", token]);
+      return json({ error: "expired" }, 410);
+    }
+    await kv.delete(["pair", token]); // 一次性使用
+    return json({ bucket: rec.value.bucket });
   }
 
   return await serveStatic(pathname);
