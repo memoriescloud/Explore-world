@@ -861,13 +861,16 @@
     var W = 720, H = 272, padL = 48, padR = 50, padT = 34, padB = 46;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var n = days.length;
-    var xFor = function (idx) { return padL + (n === 1 ? plotW / 2 : plotW * idx / (n - 1)); };
+    // 左右内缩：让首/末数据点离开坐标轴，避免最外侧柱子横跨到轴外遮挡刻度数字
+    var inset = 34;
+    var x0 = padL + inset, x1 = W - padR - inset;
+    var xFor = function (idx) { return n === 1 ? (x0 + x1) / 2 : x0 + (x1 - x0) * idx / (n - 1); };
     var maxCount = DAILY_GOAL;
     days.forEach(function (dy) { if (dy.count > maxCount) maxCount = dy.count; });
     var yCount = function (v) { return padT + plotH * (1 - v / maxCount); };
     var yAcc = function (v) { return padT + plotH * (1 - v / 100); };
-    var slot = plotW / (n - 1);
-    var barW = Math.min(48, slot * 0.46);
+    var slot = (x1 - x0) / (n - 1);
+    var barW = Math.min(38, slot * 0.5);
 
     var svg = "<svg class='wk-svg' viewBox='0 0 " + W + " " + H + "' preserveAspectRatio='xMidYMid meet'>";
     // 横向网格 + 双轴刻度（颜色加深，避免发灰不显眼）
