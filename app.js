@@ -116,6 +116,33 @@
       .catch(function () { syncOnline = false; updateSyncUI(); if (cb) cb(); });
   }
   function syncNow() { pullSync(function () { pushSync(); }); }
+
+  // 后台定时自动拉取：让另一台设备的新进度无需手动点「立即同步」也自动生效
+  var autoSyncTimer = null;
+  function pullAuto() {
+    if (applyingRemote) return;
+    var uid = getUid();
+    fetch("/api/data?uid=" + encodeURIComponent(uid), { method: "GET" })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.payload && j.ts && j.ts > (settings.lastSyncTs || 0)) {
+          applySnapshot(j.payload);          // 更新内存变量并落盘
+          settings.lastSyncTs = j.ts;
+          try { localStorage.setItem("epc_settings_v1", JSON.stringify(settings)); } catch (e) {}
+          syncOnline = true;
+          updateSyncUI();
+          // 仅在首页时自动刷新界面（避免在答题途中被打断）；其他界面下次操作自动生效
+          if (!currentMode) rerenderCurrent();
+        } else { syncOnline = true; updateSyncUI(); }
+      })
+      .catch(function () { syncOnline = false; updateSyncUI(); });
+  }
+  function startAutoSync() {
+    if (autoSyncTimer) return;
+    autoSyncTimer = setInterval(function () {
+      if (document.visibilityState === "visible") pullAuto();
+    }, 12000);
+  }
   function rerenderCurrent() { if (currentMode) setMode(currentMode); else goHome(); }
   function syncLabel() {
     if (!syncOnline) return "📱 本地进度已保存（未连接同步服务）";
@@ -1122,5 +1149,6 @@
 
   // 启动：先尝试从云端拉取（若已连接同步服务），再渲染首页
   pullSync(function () { rerenderCurrent(); });
+  startAutoSync(); // 开启后台每 12 秒自动拉取，实现免点同步
   goHome();
 })();
