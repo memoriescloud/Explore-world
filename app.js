@@ -1057,9 +1057,22 @@
     // 底部静默同步提示 + 添加设备入口（方案②：无需同步码）
     var foot = document.createElement("div");
     foot.className = "home-foot";
+    var statusText;
+    if (!syncOnline) {
+      statusText = syncLabel(); // 未连接
+    } else if (settings.lastSyncTs) {
+      var d = new Date(settings.lastSyncTs);
+      statusText = "云端同步开启 · 已同步 · 上次 " + pad2(d.getHours()) + ":" + pad2(d.getMinutes());
+    } else {
+      statusText = "云端同步开启 · 已连接同步服务";
+    }
     foot.innerHTML =
-      "<div class='sync-hint'>☁ 云端同步进行中（后台自动）<span class='js-sync-status'>" + syncLabel() + "</span></div>" +
-      "<div>数据自动跨设备同步。　<span class='add-device' id='addDevice'>添加设备（同步到其他设备）</span></div>";
+      "<div class='sync-bar'>" +
+        "<div class='sync-row1'>" +
+          "<span class='sync-status'>" + statusText + "</span>" +
+          "<button class='btn-add-device add-device' id='addDevice'>添加设备</button>" +
+        "</div>" +
+      "</div>";
     app.appendChild(foot);
     var ad = document.getElementById("addDevice");
     if (ad) ad.onclick = openPair;
