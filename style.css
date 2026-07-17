@@ -351,11 +351,13 @@ body {
 .btn-add-device {
   display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--brand); background: var(--brand); color: #fff;
-  padding: 4px 11px; border-radius: 16px; font-size: 12px; cursor: pointer; transition: .12s; font-weight: 600;
+  padding: 5px 11px; border-radius: 16px; font-size: 12px; cursor: pointer; transition: .12s; font-weight: 600;
 }
 .btn-add-device:hover { filter: brightness(1.08); }
 .btn-add-device::before { content: "+"; font-size: 15px; line-height: 1; }
 .sync-note { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
+/* 首页同步条底部的版本号 + 祝福语：居中、与上方说明文字间距收紧 */
+.sync-ver { margin-top: 8px; text-align: center; font-size: 11px; color: var(--ink-soft); letter-spacing: .3px; }
 @media (max-width: 520px) {
   .sync-row1 { flex-direction: column; align-items: stretch; gap: 8px; }
   .btn-add-device { justify-content: center; }
