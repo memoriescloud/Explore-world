@@ -898,11 +898,9 @@
         svg += "<text x='" + xFor(idx) + "' y='" + (yAcc(dy.acc) - 11) + "' text-anchor='middle' font-size='11.5' font-weight='800' fill='#15803d' paint-order='stroke' stroke='#fff' stroke-width='3'>" + dy.acc + "%</text>";
       }
     });
-    // 目标虚线（最上层，加白底标签，确保不被柱遮挡）
+    // 目标虚线（最上层；标签移入图例，避免被柱子遮挡）
     var gy = yCount(DAILY_GOAL);
     svg += "<line x1='" + padL + "' y1='" + gy + "' x2='" + (W - padR) + "' y2='" + gy + "' stroke='#f59e0b' stroke-width='1.8' stroke-dasharray='6 4'/>";
-    svg += "<rect x='" + (W - padR - 66) + "' y='" + (gy - 11) + "' width='64' height='16' rx='8' fill='#fff7ed' stroke='#fdba74'/>";
-    svg += "<text x='" + (W - padR - 34) + "' y='" + (gy + 1) + "' text-anchor='middle' font-size='11' font-weight='700' fill='#c2410c'>目标 " + DAILY_GOAL + "</text>";
     // 日期标签（置底）
     days.forEach(function (dy, idx) {
       var lblCls = dy.isToday ? "wk-xl today" : "wk-xl";
@@ -911,7 +909,12 @@
     svg += "</svg>";
 
     var html = "<h4 style='margin:0 0 10px'>近 7 日练习</h4>";
-    html += "<div class='week-legend' style='margin-bottom:6px'><span class='lg-line c-blue'></span>每日答题量（柱·左轴）　<span class='lg-line c-green'></span>准确率（曲线·右轴）</div>";
+    // 图例居中显示在标题下方、图表上方；目标值移入图例，避免线上标签遮挡柱子
+    html += "<div class='week-legend' style='margin-bottom:6px;text-align:center'>" +
+      "<span class='lg-line c-blue'></span>每日答题量　" +
+      "<span class='lg-line c-green'></span>准确率　" +
+      "<span class='lg-line c-orange dash'></span>目标 " + DAILY_GOAL + " 题" +
+      "</div>";
     html += svg;
     return html;
   }
