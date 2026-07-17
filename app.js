@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.1";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.2";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -1113,10 +1113,9 @@
           "<button class='btn-add-device add-device' id='addDevice'>设备同步</button>" +
         "</div>" +
         "<div class='sync-note'>数据保存在本机浏览器，并自动跨设备云端同步。</div>" +
+        "<div class='sync-ver'>v" + APP_VERSION + "  @四叶草🍀的祝福</div>" +
       "</div>";
     app.appendChild(foot);
-    var av = document.getElementById("appVer");
-    if (av) av.textContent = "v" + APP_VERSION;
     var ad = document.getElementById("addDevice");
     if (ad) ad.onclick = openPair;
   }
