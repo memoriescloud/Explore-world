@@ -343,18 +343,21 @@ body {
 }
 .sync-row1 { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
 .sync-status {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; line-height: 1;
   background: var(--ok-soft); border: 1px solid #bbf7d0; color: #15803d;
   border-radius: 20px; padding: 5px 12px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
 }
-.sync-status::before { content: "☁"; }
+.sync-status::before { content: "☁"; font-size: 13px; line-height: 1; }
 .btn-add-device {
   display: inline-flex; align-items: center; gap: 5px;
   border: 1px solid var(--brand); background: var(--brand); color: #fff;
   padding: 5px 11px; border-radius: 16px; font-size: 12px; cursor: pointer; transition: .12s; font-weight: 600;
+  appearance: none; -webkit-appearance: none; line-height: 1; margin: 0;
 }
 .btn-add-device:hover { filter: brightness(1.08); }
-.btn-add-device::before { content: "+"; font-size: 15px; line-height: 1; }
+.btn-add-device::before { content: "+"; font-size: 13px; line-height: 1; }
+/* 强制状态胶囊与设备同步按钮同高，确保垂直中心对齐 */
+.sync-status, .btn-add-device { height: 28px; box-sizing: border-box; }
 .sync-note { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); text-align: center; font-size: 12px; color: var(--ink-soft); line-height: 1.5; }
 /* 首页同步条底部的版本号 + 祝福语：居中、与上方说明文字间距收紧 */
 .sync-ver { margin-top: 8px; text-align: center; font-size: 11px; color: var(--ink-soft); letter-spacing: .3px; }
