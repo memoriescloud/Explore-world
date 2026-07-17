@@ -11,6 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
+  var APP_VERSION = "1.1";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -226,7 +227,7 @@
   function todayKey() { return fmtKey(new Date()); }
   function todayStat() {
     var k = todayKey();
-    if (!daily[k]) daily[k] = { count: 0, correct: 0, wrong: 0 };
+    if (!daily[k]) daily[k] = { count: 0, correct: 0, wrong: 0, obj: 0 };
     return daily[k];
   }
   function streakDays() {
@@ -364,8 +365,14 @@
   }
   // 从候选池中挑一道满足限制的题目；无候选人时逐级放宽，保证总能出题
   // 「当日已答对不再出现」为硬约束，仅在极端（全部答对/池耗尽）时才作最后兜底
-  function drawId(pool) {
+  function drawId(pool, relax) {
     if (!pool || pool.length === 0) return null;
+    // 错题库模式：纯随机等概率抽取，跳过「每日≤3、20分钟内≤1」限制与加权，每道错题被抽到概率相同
+    if (relax) {
+      var rid = pool[Math.floor(Math.random() * pool.length)];
+      markShown(rid);
+      return rid;
+    }
     var cand = pool.filter(isEligible);
     if (cand.length === 0) cand = pool.filter(function (id) { return !correctToday(id) && shownToday(id) < MAX_SAME_DAY; });
     if (cand.length === 0) cand = pool.filter(function (id) { return !correctToday(id); });
@@ -392,13 +399,19 @@
     if (correct) markCorrectToday(q.id); // 当日答对 → 当日不再出现
     // 每日练习统计
     var t = todayStat();
-    t.count++;
+    t.count++; t.obj++; // obj=客观题计题量（准确率分母）；简答题仅计入 count
     if (correct) t.correct++; else t.wrong++;
     if (!correct) {
       if (!wrong[q.id]) wrong[q.id] = { wrongCount: 0, lastWrongTs: Date.now(), added: false };
       wrong[q.id].wrongCount++;
       wrong[q.id].lastWrongTs = Date.now();
     }
+    saveAll();
+  }
+  // 简答题：仅计入「每日答题量」（count），不计入正确/错误，故不影响准确率
+  function recordShort(q) {
+    var t = todayStat();
+    t.count++;
     saveAll();
   }
   function removeWrong(id) { delete wrong[id]; saveWrong(); toast("已移出错题本"); }
@@ -450,20 +463,22 @@
         el.onclick = b.onClick;
         acts.appendChild(el);
       });
-      // 下一题
-      var next = document.createElement("button");
-      next.className = "btn primary";
-      next.textContent = "下一题 →";
-      next.onclick = function () { opts.goNext(); };
-      acts.appendChild(next);
+      // 下一题（错题库模式下由「保留并继续」代替，故跳过）
+      if (!opts.skipNext) {
+        var next = document.createElement("button");
+        next.className = "btn primary";
+        next.textContent = "下一题 →";
+        next.onclick = function () { opts.goNext(); };
+        acts.appendChild(next);
+      }
       resultBox.appendChild(acts);
     }
 
     if (q.type === "short") {
-      // 简答题：自评 + 参考答案
+      // 简答题：显示参考答案 + 直接「下一题」；不评对错、不计入正确率
       var refShown = false;
-      var assessRow = document.createElement("div");
-      assessRow.className = "actions";
+      var shortRow = document.createElement("div");
+      shortRow.className = "actions";
       var showRef = document.createElement("button");
       showRef.className = "btn";
       showRef.textContent = "显示参考答案";
@@ -475,22 +490,18 @@
         ref.innerHTML = "<b>参考答案：</b><br>" + esc(q.refAnswer || "（无）");
         body.appendChild(ref);
       };
-      var okBtn = document.createElement("button");
-      okBtn.className = "btn ok"; okBtn.textContent = "我答对了";
-      var badBtn = document.createElement("button");
-      badBtn.className = "btn bad"; badBtn.textContent = "我答错了";
-      var onAssess = function (correct) {
+      var nextShort = document.createElement("button");
+      nextShort.className = "btn primary";
+      nextShort.textContent = "下一题 →";
+      nextShort.onclick = function () {
+        if (submitted) return;
         submitted = true;
-        recordAnswer(q, correct);
-        if (opts.onAnswered) opts.onAnswered(q, correct, []);
-        buildResult(correct, []);
-        // 隐藏自评按钮
-        assessRow.style.display = "none";
+        recordShort(q); // 仅计入每日答题量
+        if (opts.onAnswered) opts.onAnswered(q, null);
+        opts.goNext();
       };
-      okBtn.onclick = function () { onAssess(true); };
-      badBtn.onclick = function () { onAssess(false); };
-      assessRow.appendChild(showRef); assessRow.appendChild(okBtn); assessRow.appendChild(badBtn);
-      body.appendChild(assessRow);
+      shortRow.appendChild(showRef); shortRow.appendChild(nextShort);
+      body.appendChild(shortRow);
       return;
     }
 
@@ -545,12 +556,12 @@
 
   /* ---------------- 顺序刷题（整体测试 / 错题练习 / 模块练习） ---------------- */
   // 改为「按需动态抽题」，每抽一道都遵守重复限制（当日≤3、20分钟内<2）
-  function runOneByOne(key, getIds, infoFn, extraFor, sig) {
+  function runOneByOne(key, getIds, infoFn, extraFor, sig, relax) {
     var curKey = key + "Cur", nKey = key + "N", sigKey = key + "Sig";
     function drawNext() {
       var ids = getIds();
       if (!ids.length) { settings[curKey] = null; saveSettings(); return; }
-      var id = drawId(ids);
+      var id = drawId(ids, relax);
       settings[curKey] = id;
       settings[nKey] = (settings[nKey] == null ? 0 : settings[nKey]) + 1;
       saveSettings();
@@ -570,7 +581,8 @@
       renderQuizCard(app, q, {
         onAnswered: function () {},
         goNext: function () { drawNext(); renderCurrent(); },
-        extraActions: function (qq, correct, sel) { return extraFor ? extraFor(qq, correct, sel) : []; }
+        skipNext: relax, // 错题库模式（relax）下隐藏默认「下一题 →」，由「保留并继续」承担继续
+        extraActions: function (qq, correct, sel) { return extraFor ? extraFor(qq, correct, sel, goNext) : []; }
       });
       updateModeInfo(infoFn(n, q));
     }
@@ -581,7 +593,7 @@
   function renderOverall() {
     if (BANK.length === 0) { emptyState("题库为空"); return; }
     runOneByOne("overall", function () { return BANK.map(function (q) { return q.id; }); },
-      function (n) { return "整体测试 · 第 " + n + " 题（优先未答题·当日答对不再出现·每日≤3·20分钟内≤1·均衡抽取·近3日降权）"; },
+      function (n) { return "整体测试 · 第 " + n + " 题"; },
       null);
   }
 
@@ -713,11 +725,11 @@
     if (ids.length === 0) { emptyState("错题本为空，去“整体测试”或“随机测试”积累错题吧！"); return; }
     runOneByOne("wrongPractice",
       function () { return Object.keys(wrong).map(Number); },
-      function (n) { return "错题练习 · 第 " + n + " 题（同一题每日≤3、20分钟内≤1）"; },
-      function (q, correct, sel) {
+      function (n) { return "错题练习 · 第 " + n + " 题"; },
+      function (q, correct, sel, goNext) {
         var btns = [];
         btns.push({
-          label: "移出错题本", cls: "btn ghost",
+          label: "移出错题本", cls: "btn warn",
           onClick: function () {
             removeWrong(q.id);
             settings.wrongPracticeCur = null; settings.wrongPracticeN = null; saveSettings();
@@ -725,10 +737,11 @@
           }
         });
         if (inWrong(q.id)) {
-          btns.push({ label: "保留并继续", cls: "btn", onClick: function () { toast("已保留在错题本"); } });
+          btns.push({ label: "保留并继续", cls: "btn primary", onClick: function () { toast("已保留在错题本"); goNext(); } });
         }
         return btns;
-      });
+      },
+      undefined, true);
   }
 
   /* ---------------- 模式：按科目类别分模块练习 ---------------- */
@@ -767,7 +780,7 @@
     var ids = BANK.filter(function (q) { return (q.category || "（未分类）") === cat; }).map(function (q) { return q.id; });
     if (!ids.length) { emptyState("该科目暂无题目"); return; }
     runOneByOne("category", function () { return ids; },
-      function (n) { return "模块练习 · " + cat + " · 第 " + n + " 题（同一题每日≤3、20分钟内≤1）"; },
+      function (n) { return "模块练习 · " + cat + " · 第 " + n + " 题"; },
       null, cat);
   }
 
@@ -852,13 +865,13 @@
       days.push({
         label: mm + "-" + dd2 + " 周" + wk,
         count: rec.count,
-        acc: rec.count ? Math.round((rec.correct / rec.count) * 100) : null,
+        acc: (rec.obj != null ? rec.obj : rec.count) ? Math.round((rec.correct / (rec.obj != null ? rec.obj : rec.count)) * 100) : null,
         isToday: i === 0
       });
     }
     // 从左到右日期递增：最左为 6 天前，最右为今天（idx0=最早，idx6=今日）
 
-    var W = 720, H = 272, padL = 48, padR = 50, padT = 34, padB = 46;
+    var W = 720, H = 210, padL = 48, padR = 50, padT = 28, padB = 40;
     var plotW = W - padL - padR, plotH = H - padT - padB;
     var n = days.length;
     // 左右内缩：让首/末数据点离开坐标轴，避免最外侧柱子横跨到轴外遮挡刻度数字
@@ -885,7 +898,6 @@
       if (dy.count > 0) {
         var x = xFor(idx) - barW / 2, y = yCount(dy.count), h = padT + plotH - y;
         svg += "<rect x='" + x + "' y='" + y + "' width='" + barW + "' height='" + h + "' rx='4' fill='#2563eb'/>";
-        svg += "<text x='" + (x + barW / 2) + "' y='" + (y - 8) + "' text-anchor='middle' font-size='12' font-weight='800' fill='#1d4ed8' paint-order='stroke' stroke='#fff' stroke-width='3'>" + dy.count + "</text>";
       }
     });
     // 准确率曲线 + 数据点（绿，描边白底防遮挡）
@@ -894,8 +906,18 @@
     else if (accPts.length === 1) { var a = accPts[0].split(","); svg += "<circle cx='" + a[0] + "' cy='" + a[1] + "' r='3.5' fill='#16a34a'/>"; }
     days.forEach(function (dy, idx) {
       if (dy.acc != null) {
-        svg += "<circle cx='" + xFor(idx) + "' cy='" + yAcc(dy.acc) + "' r='4' fill='#16a34a' stroke='#fff' stroke-width='1.5'/>";
-        svg += "<text x='" + xFor(idx) + "' y='" + (yAcc(dy.acc) - 11) + "' text-anchor='middle' font-size='11.5' font-weight='800' fill='#15803d' paint-order='stroke' stroke='#fff' stroke-width='3'>" + dy.acc + "%</text>";
+        var cx = xFor(idx), cy = yAcc(dy.acc);
+        var labelY = cy - 11;
+        var barTop = dy.count > 0 ? yCount(dy.count) : Infinity;
+        if (barTop < labelY - 2) {            // 当日柱子顶端高于标签，标签会被压入柱体
+          labelY = barTop - 9;                // 上移到柱子顶端之上
+          if (labelY < padT + 4) labelY = cy + 16; // 顶到上沿则回退到数据点下方
+        }
+        svg += "<circle cx='" + cx + "' cy='" + cy + "' r='4' fill='#16a34a' stroke='#fff' stroke-width='1.5'/>";
+        // 白底圆角胶囊：确保任何背景下（含压在蓝柱上）都清晰可读
+        var lw = (dy.acc + "%").length * 7 + 10;
+        svg += "<rect x='" + (cx - lw / 2) + "' y='" + (labelY - 11) + "' width='" + lw + "' height='16' rx='8' fill='#fff' opacity='0.92'/>";
+        svg += "<text x='" + cx + "' y='" + labelY + "' text-anchor='middle' font-size='11.5' font-weight='800' fill='#15803d'>" + dy.acc + "%</text>";
       }
     });
     // 目标虚线（最上层；标签移入图例，避免被柱子遮挡）
@@ -905,6 +927,23 @@
     days.forEach(function (dy, idx) {
       var lblCls = dy.isToday ? "wk-xl today" : "wk-xl";
       svg += "<text class='" + lblCls + "' x='" + xFor(idx) + "' y='" + (H - padB + 22) + "' text-anchor='middle' font-size='12.5'>" + dy.label + "</text>";
+    });
+    // 答题量数字：最后绘制，始终位于最上层；白底胶囊防遮挡；与准确率标签同列重叠时上移错开
+    days.forEach(function (dy, idx) {
+      if (dy.count > 0) {
+        var cx = xFor(idx), cyTop = yCount(dy.count);
+        var cy = cyTop - 8;
+        if (dy.acc != null) {
+          var aY = yAcc(dy.acc) - 11;
+          var barTop = cyTop;
+          if (barTop < aY - 2) { aY = barTop - 9; if (aY < padT + 4) aY = yAcc(dy.acc) + 16; }
+          if (Math.abs(cy - aY) < 14) cy = aY - 16; // 与准确率标签重叠则上移到其上方
+        }
+        if (cy < padT + 2) cy = padT + 2; // 顶到上沿保护
+        var lw = String(dy.count).length * 7 + 10;
+        svg += "<rect x='" + (cx - lw / 2) + "' y='" + (cy - 11) + "' width='" + lw + "' height='16' rx='8' fill='#fff' opacity='0.92'/>";
+        svg += "<text x='" + cx + "' y='" + cy + "' text-anchor='middle' font-size='12' font-weight='800' fill='#1d4ed8'>" + dy.count + "</text>";
+      }
     });
     svg += "</svg>";
 
@@ -1051,10 +1090,11 @@
     // 近 7 日练习（首页底部）
     var wkCard = document.createElement("div");
     wkCard.className = "card";
+    wkCard.style.marginTop = "10px"; // 与上方答题模块网格的间距适当加大
     wkCard.innerHTML = last7Chart();
     app.appendChild(wkCard);
 
-    // 底部静默同步提示 + 添加设备入口（方案②：无需同步码）
+    // 底部静默同步提示 + 设备同步入口（方案②：无需同步码）
     var foot = document.createElement("div");
     foot.className = "home-foot";
     var statusText;
@@ -1070,10 +1110,13 @@
       "<div class='sync-bar'>" +
         "<div class='sync-row1'>" +
           "<span class='sync-status'>" + statusText + "</span>" +
-          "<button class='btn-add-device add-device' id='addDevice'>添加设备</button>" +
+          "<button class='btn-add-device add-device' id='addDevice'>设备同步</button>" +
         "</div>" +
+        "<div class='sync-note'>数据保存在本机浏览器，并自动跨设备云端同步。</div>" +
       "</div>";
     app.appendChild(foot);
+    var av = document.getElementById("appVer");
+    if (av) av.textContent = "v" + APP_VERSION;
     var ad = document.getElementById("addDevice");
     if (ad) ad.onclick = openPair;
   }
@@ -1122,7 +1165,7 @@
     document.getElementById("bankMeta").textContent = s;
   })();
 
-  // 绑定「添加设备」配对弹窗按钮
+  // 绑定「设备同步」配对弹窗按钮
   (function bindPairModal() {
     var pc = document.getElementById("pairClose"); if (pc) pc.onclick = closePair;
     var pcp = document.getElementById("pairCopy"); if (pcp) pcp.onclick = copyPair;
