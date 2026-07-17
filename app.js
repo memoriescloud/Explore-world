@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.2";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.3";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
