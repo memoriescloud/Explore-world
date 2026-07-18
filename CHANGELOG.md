@@ -12,6 +12,23 @@
 
 ---
 
+## v1.4
+
+**更新时间**：2026-07-18 17:45
+**上线时间**：待发布
+
+**更新主要内容**
+1. 修复首页同步条「云端同步开启」状态胶囊与「设备同步」按钮**仍不在同一水平线**的问题：将两者从 `display:inline-flex` 统一改为 `display:flex`，并去除上下内边距（靠 `height:28px` + `align-items:center` 居中），避免 inline-flex 元素在 flex 行中因基线/行高差异产生视觉偏移。
+2. 修复首页同步条「云端同步开启」状态胶囊内文字**不居中**的问题：`.sync-status` 加 `justify-content:center`，云朵 emoji 与文字均通过 flex 居中。
+3. 修复**错题练习每次进入都出现同一题**的 bug：`runOneByOne` 的 `sig` 参数用于断点续练，但错题练习传入的 `sig` 为 `undefined`，导致上次保存的当前题 ID 被无限复用；改为每次进入错题练习时传入 `Date.now()`，强制重新从错题库随机抽取。
+4. 统一「云端同步开启」状态胶囊与「设备同步」按钮的字体大小为 `12.5px`，进一步消除视觉差。
+
+**改动的主要文件**
+- `app.js`（`APP_VERSION` 升为 `1.4`；`renderWrongPractice` 的 `sig` 改为 `Date.now()`）
+- `style.css`（`.sync-row1` 加 `line-height:1`；`.sync-status`、`.btn-add-device` 改为 `display:flex` + `justify-content:center` + 去上下 padding）
+
+---
+
 ## v1.3
 
 **更新时间**：2026-07-17 19:00
