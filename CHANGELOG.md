@@ -12,10 +12,23 @@
 
 ---
 
+## v1.5
+
+**更新时间**：2026-07-18 17:55
+**上线时间**：待发布
+
+**更新主要内容**
+1. 修复**错题练习答对后无法进入下一题**的 bug：`runOneByOne` 的 `renderCurrent` 内，`extraActions` 闭包中将 `goNext` 当作自由变量引用，但当时 `goNext` 仅作为 `renderQuizCard` 的 `opts.goNext` 属性值存在，并未在作用域内声明为变量，导致答完题生成「移出错题本 / 保留并继续」按钮时抛出 `ReferenceError: goNext is not defined`，按钮全部无法生成、卡在结果页。改为先将 `goNext` 声明为局部变量，再同时用于 `opts.goNext` 与 `extraActions` 透传，问题消除。
+
+**改动的主要文件**
+- `app.js`（`APP_VERSION` 升为 `1.5`；`runOneByOne` 的 `renderCurrent` 内 `goNext` 提升为局部变量）
+
+---
+
 ## v1.4
 
 **更新时间**：2026-07-18 17:45
-**上线时间**：待发布
+**上线时间**：2026-07-18 17:49
 
 **更新主要内容**
 1. 修复首页同步条「云端同步开启」状态胶囊与「设备同步」按钮**仍不在同一水平线**的问题：将两者从 `display:inline-flex` 统一改为 `display:flex`，并去除上下内边距（靠 `height:28px` + `align-items:center` 居中），避免 inline-flex 元素在 flex 行中因基线/行高差异产生视觉偏移。
