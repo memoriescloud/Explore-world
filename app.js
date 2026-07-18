@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.4";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.5";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -578,9 +578,10 @@
       if (!q) { drawNext(); q = getQ(settings[curKey]); }
       if (!q) { emptyState("没有可练习的题目"); return; }
       var n = settings[nKey] || 1;
+      var goNext = function () { drawNext(); renderCurrent(); };
       renderQuizCard(app, q, {
         onAnswered: function () {},
-        goNext: function () { drawNext(); renderCurrent(); },
+        goNext: goNext,
         skipNext: relax, // 错题库模式（relax）下隐藏默认「下一题 →」，由「保留并继续」承担继续
         extraActions: function (qq, correct, sel) { return extraFor ? extraFor(qq, correct, sel, goNext) : []; }
       });
