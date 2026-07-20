@@ -216,6 +216,8 @@ body {
 .btn.primary:hover { filter: brightness(1.05); color: #fff; }
 .btn.warn { background: #ea580c; border-color: #ea580c; color: #fff; }
 .btn.warn:hover { filter: brightness(1.05); color: #fff; }
+/* 错题「连续答对 5 次」确认移除提示 */
+.auto-remove-tip { width: 100%; text-align: center; font-size: 13px; font-weight: 600; color: #b45309; margin-bottom: 8px; }
 .btn.ok { background: var(--ok); color: #fff; border-color: var(--ok); }
 .btn.bad { background: var(--bad); color: #fff; border-color: var(--bad); }
 .btn.ghost { background: transparent; }
