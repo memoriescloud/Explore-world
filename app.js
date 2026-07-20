@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.5";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.6";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -402,9 +402,13 @@
     t.count++; t.obj++; // obj=客观题计题量（准确率分母）；简答题仅计入 count
     if (correct) t.correct++; else t.wrong++;
     if (!correct) {
-      if (!wrong[q.id]) wrong[q.id] = { wrongCount: 0, lastWrongTs: Date.now(), added: false };
+      if (!wrong[q.id]) wrong[q.id] = { wrongCount: 0, lastWrongTs: Date.now(), added: false, rightStreak: 0 };
       wrong[q.id].wrongCount++;
       wrong[q.id].lastWrongTs = Date.now();
+      wrong[q.id].rightStreak = 0; // 答错 → 连续答对计数清零
+    } else if (wrong[q.id]) {
+      // 答对且在错题库 → 连续答对计数 +1（达 5 次由 UI 弹窗确认是否移除）
+      wrong[q.id].rightStreak = (wrong[q.id].rightStreak || 0) + 1;
     }
     saveAll();
   }
@@ -454,6 +458,28 @@
 
       var acts = document.createElement("div");
       acts.className = "actions";
+
+      // 错题「连续答对 5 次」自动提示移除（所有答题模式通用）
+      if (correct && inWrong(q.id) && (wrong[q.id].rightStreak || 0) >= 5) {
+        var tip = document.createElement("div");
+        tip.className = "auto-remove-tip";
+        tip.textContent = "已连续答对 5 次，是否移出错题库？";
+        acts.appendChild(tip);
+        var yesBtn = document.createElement("button");
+        yesBtn.className = "btn warn"; yesBtn.textContent = "确认移除";
+        yesBtn.onclick = function () {
+          removeWrong(q.id);
+          if (opts.practiceKey === "wrongPractice") { settings.wrongPracticeCur = null; settings.wrongPracticeN = null; saveSettings(); }
+          opts.goNext();
+        };
+        var noBtn = document.createElement("button");
+        noBtn.className = "btn"; noBtn.textContent = "暂不移除";
+        noBtn.onclick = function () { opts.goNext(); };
+        acts.appendChild(yesBtn); acts.appendChild(noBtn);
+        resultBox.appendChild(acts);
+        return;
+      }
+
       // 模式自定义按钮
       var extras = (opts.extraActions && opts.extraActions(q, correct, selectedLetters)) || [];
       extras.forEach(function (b) {
@@ -583,6 +609,7 @@
         onAnswered: function () {},
         goNext: goNext,
         skipNext: relax, // 错题库模式（relax）下隐藏默认「下一题 →」，由「保留并继续」承担继续
+        practiceKey: key, // 用于「连续答对 5 次」确认移除时判断是否为错题练习模式
         extraActions: function (qq, correct, sel) { return extraFor ? extraFor(qq, correct, sel, goNext) : []; }
       });
       updateModeInfo(infoFn(n, q));
