@@ -2484,7 +2484,7 @@ window.QUESTIONS = [
  {
   "id": 158,
   "type": "multiple",
-  "stem": "电气物资采购要点（ABCD）",
+  "stem": "电气物资采购要点（  ）",
   "options": [
    "明确参数",
    "品牌短名单",
