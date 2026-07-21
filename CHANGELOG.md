@@ -28,6 +28,37 @@
 
 ---
 
+## v1.7
+
+**更新时间**：2026-07-21 11:05
+**上线时间**：待发布
+
+**更新主要内容**
+1. 降低云端同步资源消耗，规避 Deno Deploy 免费/低配套餐 `USAGE_EXCEEDED` 配额超限导致应用被暂停：
+   - 后台自动轮询同步间隔由 **12 秒改为 60 秒**（页面可见时每 60 秒才拉取一次 `/api/data`）。
+   - 新增「两次云端同步最小间隔 30 秒」节流：本地数据变更触发 `scheduleSync` 时，若距上次实际推送不足 30 秒，防抖时间自动顺延到刚好满足间隔，避免高频刷题时连续发起同步请求。
+
+**改动的主要文件**
+- `app.js`（`APP_VERSION` 升为 `1.7`；`startAutoSync` 间隔 12000→60000；新增 `SYNC_MIN_INTERVAL=30000` 与 `lastPushAt`，`scheduleSync`/`pushSync` 应用节流）
+
+---
+
+## v1.8
+
+**更新时间**：2026-07-21 11:17
+**上线时间**：待发布
+
+**更新主要内容**
+1. 新增**闲置自动保存关闭**：连续 2 分钟无有效操作（点击/按键/触摸/滚动，不含鼠标移动）即自动 `saveAll()` 保存全部进度，并弹出全屏遮罩提示关闭页面（尝试 `window.close()`，被浏览器拦截则仅提示），减少页面挂机对 Memory Time 的占用。
+2. 静态资源强缓存（`server.ts`）：`serveStatic` 给静态文件加 `Cache-Control: max-age=300` 与 `ETag`，支持 `If-None-Match` 返回 304，避免挂机期间重复向服务器请求 `app.js`/`style.css`/`data/questions.js` 等大文件，大幅降低 Memory Time。
+3. 答题模式暂停自动轮询：进入任意答题/练习模式时 `clearInterval(autoSyncTimer)`，回到首页再 `startAutoSync()`，刷题期间不再持续拉取云端。
+
+**改动的主要文件**
+- `app.js`（`APP_VERSION` 升为 `1.8`；`setMode` 进入模式暂停轮询、`goHome` 恢复轮询；新增 `setupIdleGuard` 闲置检测）
+- `server.ts`（`serveStatic` 加缓存头与 304 支持）
+
+---
+
 ## v1.5
 
 **更新时间**：2026-07-18 17:55
