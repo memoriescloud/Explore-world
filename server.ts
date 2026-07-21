@@ -59,7 +59,7 @@ const MIME: Record<string, string> = {
 // 禁止直接访问服务端/敏感文件
 const FORBIDDEN = /^\/(server\.ts|convert\.py|package\.json|deno\.json|deno_kv\.db|README\.md|\.git)/;
 
-async function serveStatic(pathname: string): Promise<Response> {
+async function serveStatic(pathname: string, req: Request): Promise<Response> {
   let rel = decodeURIComponent(pathname);
   if (rel === "/") rel = "/index.html";
   // 阻断路径穿越与敏感文件
@@ -77,10 +77,19 @@ async function serveStatic(pathname: string): Promise<Response> {
     const data = await Deno.readFile(filePath);
     const dot = filePath.lastIndexOf(".");
     const ext = dot >= 0 ? filePath.slice(dot).toLowerCase() : "";
-    return new Response(data, {
-      status: 200,
-      headers: { "Content-Type": MIME[ext] ?? "application/octet-stream" },
-    });
+    // 强缓存 + ETag：让浏览器复用 app.js/style.css/data/questions.js 等大文件，
+    // 避免挂机期间每次自动轮询都重新向服务器请求静态资源，显著降低 Memory Time。
+    const etag = `"${stat.size}-${(stat.mtime?.getTime() ?? 0)}"`;
+    const headers: Record<string, string> = {
+      "Content-Type": MIME[ext] ?? "application/octet-stream",
+      "Cache-Control": "public, max-age=300",
+      "ETag": etag,
+    };
+    // 内容未变则返回 304，不传输 body，进一步省内存与带宽
+    if (req.headers.get("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers });
+    }
+    return new Response(data, { status: 200, headers });
   } catch {
     return new Response("not found", { status: 404 });
   }
@@ -154,7 +163,7 @@ async function handler(req: Request): Promise<Response> {
     return json({ bucket: rec.value.bucket });
   }
 
-  return await serveStatic(pathname);
+  return await serveStatic(pathname, req);
 }
 
 // Deno Deploy 由平台接管端口；本地运行默认监听 8000。
