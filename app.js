@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.6";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.8";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -41,6 +41,8 @@
   var SYNC_KEYS = ["epc_wrong_v1", "epc_stats_v1", "epc_settings_v1", "epc_daily_v1", "epc_seen_v1", "epc_correct_v1", "epc_shown_v1"];
   var applyingRemote = false;   // 应用远端数据时，抑制本地 saveK 触发回推
   var pushTimer = null;
+  var lastPushAt = 0;           // 上次实际发起推送的时间戳（用于最小同步间隔节流）
+  var SYNC_MIN_INTERVAL = 30000; // 两次云端同步最小间隔 30 秒，避免高频请求触发平台配额
   var syncOnline = false;       // 是否连上同步服务
 
   function genUid() {
@@ -80,13 +82,18 @@
   function scheduleSync() {
     if (applyingRemote) return;
     if (pushTimer) clearTimeout(pushTimer);
-    pushTimer = setTimeout(pushSync, 700);
+    // 距上次推送不足最小间隔时，把防抖时间顺延到刚好满足间隔，避免高频请求
+    var wait = 700;
+    var since = Date.now() - lastPushAt;
+    if (since < SYNC_MIN_INTERVAL) wait = SYNC_MIN_INTERVAL - since;
+    pushTimer = setTimeout(pushSync, wait);
   }
   function pushSync() {
     if (applyingRemote) return;
     var uid = getUid();
     var payload = snapshot();
     var ts = Date.now();
+    lastPushAt = ts; // 记录本次推送发起时间，供节流判断
     var body = JSON.stringify({ uid: uid, ts: ts, payload: payload });
     fetch("/api/data?uid=" + encodeURIComponent(uid), {
       method: "PUT", headers: { "Content-Type": "application/json" }, body: body
@@ -142,7 +149,7 @@
     if (autoSyncTimer) return;
     autoSyncTimer = setInterval(function () {
       if (document.visibilityState === "visible") pullAuto();
-    }, 12000);
+    }, 60000);
   }
   function rerenderCurrent() { if (currentMode) setMode(currentMode); else goHome(); }
   function syncLabel() {
@@ -1164,6 +1171,7 @@
   var inCategoryPractice = false;
   function goHome() {
     subbar.classList.add("hidden");
+    startAutoSync(); // 回到首页恢复后台自动轮询（答题模式下已暂停以省资源）
     renderHome();
   }
   function onBack() {
@@ -1173,6 +1181,8 @@
   function setMode(mode) {
     settings.lastMode = mode; saveSettings();
     currentMode = mode;
+    // 进入任意答题/练习模式：暂停后台自动轮询，避免刷题期间持续请求消耗 Memory Time
+    if (autoSyncTimer) { clearInterval(autoSyncTimer); autoSyncTimer = null; }
     subbar.classList.remove("hidden");
     document.getElementById("modeTitle").textContent = MODE_TITLE[mode] || "";
     updateModeInfo("");
@@ -1205,6 +1215,37 @@
 
   // 启动：先尝试从云端拉取（若已连接同步服务），再渲染首页
   pullSync(function () { rerenderCurrent(); });
-  startAutoSync(); // 开启后台每 12 秒自动拉取，实现免点同步
+  startAutoSync(); // 开启后台自动轮询（首页态），进入答题模式会自动暂停
   goHome();
+
+  // 闲置自动保存：连续 2 分钟无任何有效操作，则保存进度并提示关闭页面，
+  // 减少页面挂机对服务器 Memory Time 的占用。
+  (function setupIdleGuard() {
+    var IDLE_MS = 120000; // 2 分钟
+    var idleTimer = null;
+    var overlay = null;
+    function resetIdle() {
+      if (idleTimer) clearTimeout(idleTimer);
+      if (overlay) { overlay.remove(); overlay = null; }
+      idleTimer = setTimeout(onIdle, IDLE_MS);
+    }
+    function onIdle() {
+      saveAll(); // 自动保存全部进度到本地（含云端同步排队）
+      overlay = document.createElement("div");
+      overlay.style.cssText =
+        "position:fixed;inset:0;background:rgba(15,23,42,.92);color:#fff;" +
+        "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+        "z-index:9999;font-size:15px;text-align:center;padding:24px;line-height:1.8;";
+      overlay.innerHTML =
+        "⏱ 已闲置 2 分钟<br>进度已自动保存<br><br>" +
+        "<span style='font-size:13px;opacity:.8'>请手动关闭此页面，以减少服务器资源占用</span>";
+      document.body.appendChild(overlay);
+      try { window.close(); } catch (e) {} // 多数浏览器会拦截，仅作尝试
+    }
+    // 仅把「点击/按键/触摸/滚动」视为有效操作（鼠标移动不计时，避免人离开却一直计时）
+    ["click", "keydown", "touchstart", "scroll"].forEach(function (ev) {
+      document.addEventListener(ev, resetIdle, true);
+    });
+    resetIdle();
+  })();
 })();
