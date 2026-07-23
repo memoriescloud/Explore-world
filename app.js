@@ -11,7 +11,7 @@
   var REPEAT_WINDOW_MS = 20 * 60 * 1000; // 连续 20 分钟内同一题最多出现 1 次（<2）
   var RECENCY_WINDOW_DAYS = 3;     // 近 N 日内出现过的题，抽取概率递减
   var RECENCY_FACTOR = 0.5;        // 每在近 N 日内多出现一天，权重乘此系数（<1，越小衰减越强）
-  var APP_VERSION = "1.8";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
+  var APP_VERSION = "1.9";         // 应用版本号（双段式 MAJOR.ITERATION，详见 CHANGELOG.md）
 
   /* ---------------- 存储 ---------------- */
   function loadK(key, def) {
@@ -488,7 +488,7 @@
       }
 
       // 模式自定义按钮
-      var extras = (opts.extraActions && opts.extraActions(q, correct, selectedLetters)) || [];
+      var extras = (opts.extraActions && opts.extraActions(q, correct, selectedLetters, opts.goNext)) || [];
       extras.forEach(function (b) {
         var el = document.createElement("button");
         el.className = "btn " + (b.cls || "");
@@ -720,8 +720,35 @@
   function renderWrongList() {
     var ids = Object.keys(wrong).map(Number);
     if (ids.length === 0) { emptyState("还没有错题，继续加油！"); return; }
-    updateModeInfo("共 " + ids.length + " 道错题");
     app.innerHTML = "";
+    updateModeInfo("共 " + ids.length + " 道错题");
+
+    // 筛选条：题目类型 / 专业类别 / 错题数量（按单题答错次数分档）
+    var fbar = document.createElement("div");
+    fbar.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:#fafafa;border:1px solid #eee;border-radius:10px;padding:12px 14px;margin-bottom:14px";
+    var typeOpts = '<option value="">全部类型</option>';
+    var catOpts = '<option value="">全部类别</option>';
+    var seenT = {}, seenC = {};
+    QUESTIONS.forEach(function (q) {
+      if (q.type !== "short" && !seenT[q.type]) { seenT[q.type] = 1; typeOpts += '<option value="' + q.type + '">' + typeLabel(q.type) + '</option>'; }
+      if (q.category && !seenC[q.category]) { seenC[q.category] = 1; catOpts += '<option value="' + esc(q.category) + '">' + esc(q.category) + '</option>'; }
+    });
+    fbar.innerHTML =
+      '<label style="display:flex;flex-direction:column;font-size:12px;color:#666;gap:4px">题目类型' +
+        '<select id="fType" style="padding:7px 10px;border:1px solid #d9d9d9;border-radius:8px;font-size:14px;min-width:150px;background:#fff">' + typeOpts + '</select></label>' +
+      '<label style="display:flex;flex-direction:column;font-size:12px;color:#666;gap:4px">专业类别' +
+        '<select id="fCat" style="padding:7px 10px;border:1px solid #d9d9d9;border-radius:8px;font-size:14px;min-width:150px;background:#fff">' + catOpts + '</select></label>' +
+      '<label style="display:flex;flex-direction:column;font-size:12px;color:#666;gap:4px">错题数量' +
+        '<select id="fCount" style="padding:7px 10px;border:1px solid #d9d9d9;border-radius:8px;font-size:14px;min-width:150px;background:#fff">' +
+          '<option value="">全部次数</option>' +
+          '<option value="1">仅答错 1 次</option>' +
+          '<option value="2-3">答错 2–3 次</option>' +
+          '<option value="4-5">答错 4–5 次</option>' +
+          '<option value="6+">答错 6 次及以上</option>' +
+        '</select></label>' +
+      '<button id="fReset" class="btn ghost" style="height:36px">重置筛选</button>';
+    app.appendChild(fbar);
+
     // 操作条
     var bar = document.createElement("div");
     bar.className = "actions";
@@ -737,46 +764,113 @@
     bar.appendChild(practice); bar.appendChild(clear);
     app.appendChild(bar);
 
-    ids.forEach(function (id) {
-      var q = getQ(id); if (!q) return;
-      var w = wrong[id];
-      var item = document.createElement("div");
-      item.className = "qitem";
-      var lastWrong = w.lastWrongTs ? new Date(w.lastWrongTs).toLocaleString("zh-CN") : "—";
-      item.innerHTML =
-        "<div class='qi-meta'><span class='badge'>" + typeLabel(q.type) + "</span>" +
-        (q.category ? "<span class='badge cat'>" + esc(q.category) + "</span>" : "") +
-        "<span class='badge diff'>答错 " + w.wrongCount + " 次</span></div>" +
-        "<div class='qi-stem'>" + esc(q.stem) + "</div>" +
-        "<div class='qi-ans'>最近答错：" + lastWrong + "</div>";
-      item.onclick = function () { openDetail(id); };
-      app.appendChild(item);
-    });
+    // 列表容器（筛选时仅重渲此处，保留筛选条与操作条）
+    var listWrap = document.createElement("div");
+    listWrap.id = "wrongListWrap";
+    app.appendChild(listWrap);
+
+    function drawList() {
+      var ft = document.getElementById("fType").value;
+      var fc = document.getElementById("fCat").value;
+      var fk = document.getElementById("fCount").value;
+      var sel = ids.filter(function (id) {
+        var q = getQ(id); if (!q) return false;
+        if (ft && q.type !== ft) return false;
+        if (fc && q.category !== fc) return false;
+        var wc = (wrong[id] && wrong[id].wrongCount) || 0;
+        if (fk === "1" && wc !== 1) return false;
+        if (fk === "2-3" && !(wc >= 2 && wc <= 3)) return false;
+        if (fk === "4-5" && !(wc >= 4 && wc <= 5)) return false;
+        if (fk === "6+" && wc < 6) return false;
+        return true;
+      });
+      listWrap.innerHTML = "";
+      var cnt = document.createElement("div");
+      cnt.style.cssText = "font-size:13px;color:#888;margin:0 0 10px;font-weight:600";
+      cnt.textContent = "筛选结果：共 " + sel.length + " 道错题";
+      listWrap.appendChild(cnt);
+      if (sel.length === 0) {
+        var e = document.createElement("div");
+        e.style.cssText = "padding:40px;text-align:center;color:#999";
+        e.textContent = "没有符合筛选条件的错题";
+        listWrap.appendChild(e);
+        return;
+      }
+      sel.forEach(function (id) {
+        var q = getQ(id); if (!q) return;
+        var w = wrong[id];
+        var item = document.createElement("div");
+        item.className = "qitem";
+        var lastWrong = w.lastWrongTs ? new Date(w.lastWrongTs).toLocaleString("zh-CN") : "—";
+        item.innerHTML =
+          "<div class='qi-meta'><span class='badge'>" + typeLabel(q.type) + "</span>" +
+          (q.category ? "<span class='badge cat'>" + esc(q.category) + "</span>" : "") +
+          "<span class='badge diff'>答错 " + w.wrongCount + " 次</span></div>" +
+          "<div class='qi-stem'>" + esc(q.stem) + "</div>" +
+          "<div class='qi-ans'>最近答错：" + lastWrong + "</div>";
+        item.onclick = function () { openDetail(id); };
+        listWrap.appendChild(item);
+      });
+    }
+
+    document.getElementById("fType").onchange = drawList;
+    document.getElementById("fCat").onchange = drawList;
+    document.getElementById("fCount").onchange = drawList;
+    document.getElementById("fReset").onclick = function () {
+      document.getElementById("fType").value = "";
+      document.getElementById("fCat").value = "";
+      document.getElementById("fCount").value = "";
+      drawList();
+    };
+
+    drawList();
   }
 
   /* ---------------- 模式：错题练习 ---------------- */
+  /* ---------------- 模式：错题练习（随机抽题，本轮不重复直到池耗尽） ---------------- */
+  var wrongSessionShown = []; // 本轮已抽过的错题 id，避免短时间内重复出现
+  function drawRandomWrong() {
+    var ids = Object.keys(wrong).map(Number);
+    if (!ids.length) return null;
+    var remaining = ids.filter(function (id) { return wrongSessionShown.indexOf(id) < 0; });
+    if (!remaining.length) { wrongSessionShown = []; remaining = ids.slice(); } // 池耗尽则重置，重新随机
+    var id = remaining[Math.floor(Math.random() * remaining.length)];
+    wrongSessionShown.push(id);
+    markShown(id);
+    return id;
+  }
   function renderWrongPractice() {
     var ids = Object.keys(wrong).map(Number);
     if (ids.length === 0) { emptyState("错题本为空，去“整体测试”或“随机测试”积累错题吧！"); return; }
-    runOneByOne("wrongPractice",
-      function () { return Object.keys(wrong).map(Number); },
-      function (n) { return "错题练习 · 第 " + n + " 题"; },
-      function (q, correct, sel, goNext) {
-        var btns = [];
-        btns.push({
-          label: "移出错题本", cls: "btn warn",
-          onClick: function () {
-            removeWrong(q.id);
-            settings.wrongPracticeCur = null; settings.wrongPracticeN = null; saveSettings();
-            renderWrongPractice();
+    var curId = drawRandomWrong();
+    function renderCurrent() {
+      var q = getQ(curId);
+      if (!q) { curId = drawRandomWrong(); q = getQ(curId); }
+      if (!q) { emptyState("没有可练习的题目"); return; }
+      renderQuizCard(app, q, {
+        onAnswered: function () {},
+        goNext: function () { curId = drawRandomWrong(); renderCurrent(); },
+        skipNext: true, // 错题库模式下隐藏默认「下一题 →」，由「保留并继续」承担继续
+        practiceKey: "wrongPractice",
+        extraActions: function (qq, correct, sel, goNext) {
+          var btns = [];
+          btns.push({
+            label: "移出错题本", cls: "btn warn",
+            onClick: function () {
+              removeWrong(qq.id);
+              wrongSessionShown = wrongSessionShown.filter(function (x) { return x !== qq.id; });
+              renderWrongPractice();
+            }
+          });
+          if (inWrong(qq.id)) {
+            btns.push({ label: "保留并继续", cls: "btn primary", onClick: function () { toast("已保留在错题本"); goNext(); } });
           }
-        });
-        if (inWrong(q.id)) {
-          btns.push({ label: "保留并继续", cls: "btn primary", onClick: function () { toast("已保留在错题本"); goNext(); } });
+          return btns;
         }
-        return btns;
-      },
-      Date.now(), true);
+      });
+      updateModeInfo("错题练习（随机抽题）");
+    }
+    renderCurrent();
   }
 
   /* ---------------- 模式：按科目类别分模块练习 ---------------- */
