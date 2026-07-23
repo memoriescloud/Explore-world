@@ -368,6 +368,7 @@ body {
 @media (max-width: 520px) {
   .sync-row1 { flex-direction: column; align-items: stretch; gap: 8px; }
   .btn-add-device { justify-content: center; }
+  .sync-row2 { flex-direction: column; align-items: stretch; }
 }
 
 /* ---------- 添加设备配对弹窗 ---------- */
